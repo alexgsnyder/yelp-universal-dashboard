@@ -19,7 +19,7 @@
 # > - Drop overly granular `_pct` columns (e.g., `adv_pct`, `noun_pct`, `adj_pct`, `verb_pct`) **only during data loading**, not in the source files.  
 # > - Final code should end with a callable `yelp_dashboard()` master function.
 
-# In[1]:
+# In[33]:
 
 
 #2. Imports & File Paths
@@ -69,7 +69,7 @@ BUSINESS_AGGREGATED_PATH = "business_aggregated_sample.csv"
 # 
 # We will gradually fill these functions in as we refactor Lily's prototype code.
 
-# In[2]:
+# In[34]:
 
 
 #3. Helper & Utility Functions (Scaffold)
@@ -222,7 +222,7 @@ def apply_user_filters(df_full: pl.DataFrame,
 
 # ## Descriptive Analysis
 
-# In[3]:
+# In[35]:
 
 
 def descriptive_analysis(df: pl.DataFrame, business_lookup: pl.DataFrame):
@@ -436,7 +436,7 @@ def descriptive_analysis(df: pl.DataFrame, business_lookup: pl.DataFrame):
 
 # ## Predictive Analysis
 
-# In[4]:
+# In[36]:
 
 
 def predictive_analysis(df: pl.DataFrame, periods: int = 6):
@@ -589,7 +589,7 @@ def predictive_analysis(df: pl.DataFrame, periods: int = 6):
 
 # ## Diagnostic Analysis
 
-# In[5]:
+# In[37]:
 
 
 def diagnostic_analysis(
@@ -699,10 +699,12 @@ def diagnostic_analysis(
     # -------------------------------
     # 3. Linguistic correlations with stars
     # -------------------------------
+    # Dynamically detect linguistic percentage columns
     ling_cols = [
         c for c in df.columns
-        if c in ["avg_noun_pct", "avg_verb_pct", "avg_adj_pct", "avg_adv_pct"]
+        if c.endswith("_pct") and any(tag in c for tag in ["noun", "verb", "adj", "adv"])
     ]
+
     ling_corr_df = pd.DataFrame(columns=["feature", "pearson_corr_with_stars"])
 
     if "stars" in df.columns and ling_cols:
@@ -788,7 +790,7 @@ def diagnostic_analysis(
 
 # ## Prescriptive Analysis
 
-# In[6]:
+# In[38]:
 
 
 def prescriptive_analysis(df: pl.DataFrame, business_lookup: pl.DataFrame):
@@ -932,7 +934,7 @@ def prescriptive_analysis(df: pl.DataFrame, business_lookup: pl.DataFrame):
 
 # ### Streamlit Page Setup & User Input
 
-# In[7]:
+# In[39]:
 
 
 #5. Master Function Scaffold
@@ -1220,7 +1222,7 @@ def yelp_dashboard():
 
 # ## Entry Point / Function Call
 
-# In[8]:
+# In[40]:
 
 
 # ---------------------------------------------------------
@@ -1241,7 +1243,7 @@ if __name__ == "__main__":
 
 # ## CODE TESTS
 
-# In[9]:
+# In[41]:
 
 
 # TEST 1: Load updated data for both industries
@@ -1261,7 +1263,7 @@ print("Mexican lookup preview:")
 print(lookup_mex.head() if lookup_mex is not None else "No lookup loaded")
 
 
-# In[10]:
+# In[42]:
 
 
 # TEST 2: Apply a simple business-name filter on Hair data
@@ -1288,7 +1290,7 @@ else:
 
 # ## Descriptive Analysis Tests
 
-# In[11]:
+# In[43]:
 
 
 #TEST 3: Descriptive Analysis
@@ -1297,14 +1299,14 @@ line_chart, pie_chart, best, worst = descriptive_analysis(df_hair, lookup_hair)
 line_chart
 
 
-# In[12]:
+# In[44]:
 
 
 # Inspect all "star" / "weight" columns in the updated data
 [c for c in df_hair.columns if "star" in c.lower() or "weight" in c.lower() or "tdw" in c.lower()]
 
 
-# In[13]:
+# In[45]:
 
 
 #TEST #4: Top 5 Best & Top 5 Worst
@@ -1319,19 +1321,19 @@ print(worst)
 
 # ## Predictive Analysis Tests
 
-# In[14]:
+# In[46]:
 
 
 [c for c in df_hair.columns if "_pct" in c.lower()]
 
 
-# In[15]:
+# In[47]:
 
 
 [c for c in df_hair.columns if "emotion" in c.lower()]
 
 
-# In[16]:
+# In[48]:
 
 
 #TEST #5: Predictive Analysis Forecast
@@ -1342,7 +1344,7 @@ forecast_chart
 
 # ## Diagnostic Analytic Test
 
-# In[17]:
+# In[49]:
 
 
 # Make sure data is loaded
@@ -1355,7 +1357,7 @@ results.keys()
 
 # ## Prescriptive Analytic Test
 
-# In[18]:
+# In[50]:
 
 
 df_hair, lookup_hair = load_and_preprocess_data("Hair")
