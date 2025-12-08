@@ -19,7 +19,7 @@
 # > - Drop overly granular `_pct` columns (e.g., `adv_pct`, `noun_pct`, `adj_pct`, `verb_pct`) **only during data loading**, not in the source files.  
 # > - Final code should end with a callable `yelp_dashboard()` master function.
 
-# In[33]:
+# In[52]:
 
 
 #2. Imports & File Paths
@@ -69,7 +69,7 @@ BUSINESS_AGGREGATED_PATH = "business_aggregated_sample.csv"
 # 
 # We will gradually fill these functions in as we refactor Lily's prototype code.
 
-# In[34]:
+# In[53]:
 
 
 #3. Helper & Utility Functions (Scaffold)
@@ -222,7 +222,7 @@ def apply_user_filters(df_full: pl.DataFrame,
 
 # ## Descriptive Analysis
 
-# In[35]:
+# In[54]:
 
 
 def descriptive_analysis(df: pl.DataFrame, business_lookup: pl.DataFrame):
@@ -436,7 +436,7 @@ def descriptive_analysis(df: pl.DataFrame, business_lookup: pl.DataFrame):
 
 # ## Predictive Analysis
 
-# In[36]:
+# In[55]:
 
 
 def predictive_analysis(df: pl.DataFrame, periods: int = 6):
@@ -589,7 +589,7 @@ def predictive_analysis(df: pl.DataFrame, periods: int = 6):
 
 # ## Diagnostic Analysis
 
-# In[37]:
+# In[56]:
 
 
 def diagnostic_analysis(
@@ -790,7 +790,7 @@ def diagnostic_analysis(
 
 # ## Prescriptive Analysis
 
-# In[38]:
+# In[57]:
 
 
 def prescriptive_analysis(df: pl.DataFrame, business_lookup: pl.DataFrame):
@@ -934,7 +934,7 @@ def prescriptive_analysis(df: pl.DataFrame, business_lookup: pl.DataFrame):
 
 # ### Streamlit Page Setup & User Input
 
-# In[39]:
+# In[58]:
 
 
 #5. Master Function Scaffold
@@ -967,12 +967,15 @@ def yelp_dashboard():
         index=0,
     )
 
-    # Optional business-level filters
     st.sidebar.markdown("### Filters (optional)")
+
+    # Keep business ID and state as text inputs
     business_id = st.sidebar.text_input("Business ID (exact match)")
-    business_name = st.sidebar.text_input("Business Name (contains)")
-    city = st.sidebar.text_input("City")
     state = st.sidebar.text_input("State (e.g., CA, NY)")
+
+    # Placeholders for dropdown values (we'll fill these after data loads)
+    business_name = None
+    city = None
 
     # Forecast horizon for predictive analysis
     periods = st.sidebar.slider(
@@ -1006,6 +1009,46 @@ def yelp_dashboard():
 
     st.success(f"Data loaded successfully! Total reviews: {len(df)}")
 
+    # --------------------------------
+    # Dropdowns for Business Name and City
+    # --------------------------------
+    with st.sidebar.expander("Business / Location Filters", expanded=False):
+        # Business Name dropdown (optional)
+        name_col = "name" if "name" in business_lookup.columns else "business_name"
+        try:
+            business_name_options = ["(All)"] + sorted(
+                business_lookup[name_col].drop_nulls().unique().to_list()
+            )
+        except Exception:
+            business_name_options = ["(All)"]
+
+        selected_business_name = st.selectbox(
+            "Business Name",
+            options=business_name_options,
+            index=0,
+        )
+
+        if selected_business_name != "(All)":
+            business_name = selected_business_name
+
+        # City dropdown (optional)
+        if "city" in business_lookup.columns:
+            try:
+                city_options = ["(All)"] + sorted(
+                    business_lookup["city"].drop_nulls().unique().to_list()
+                )
+            except Exception:
+                city_options = ["(All)"]
+
+            selected_city = st.selectbox(
+                "City",
+                options=city_options,
+                index=0,
+            )
+
+            if selected_city != "(All)":
+                city = selected_city
+    
     # ---------------------------------------------------------
     # 3. Apply User Filters
     # ---------------------------------------------------------
@@ -1222,7 +1265,7 @@ def yelp_dashboard():
 
 # ## Entry Point / Function Call
 
-# In[40]:
+# In[59]:
 
 
 # ---------------------------------------------------------
@@ -1243,7 +1286,7 @@ if __name__ == "__main__":
 
 # ## CODE TESTS
 
-# In[41]:
+# In[60]:
 
 
 # TEST 1: Load updated data for both industries
@@ -1263,7 +1306,7 @@ print("Mexican lookup preview:")
 print(lookup_mex.head() if lookup_mex is not None else "No lookup loaded")
 
 
-# In[42]:
+# In[61]:
 
 
 # TEST 2: Apply a simple business-name filter on Hair data
@@ -1290,7 +1333,7 @@ else:
 
 # ## Descriptive Analysis Tests
 
-# In[43]:
+# In[62]:
 
 
 #TEST 3: Descriptive Analysis
@@ -1299,14 +1342,14 @@ line_chart, pie_chart, best, worst = descriptive_analysis(df_hair, lookup_hair)
 line_chart
 
 
-# In[44]:
+# In[63]:
 
 
 # Inspect all "star" / "weight" columns in the updated data
 [c for c in df_hair.columns if "star" in c.lower() or "weight" in c.lower() or "tdw" in c.lower()]
 
 
-# In[45]:
+# In[64]:
 
 
 #TEST #4: Top 5 Best & Top 5 Worst
@@ -1321,19 +1364,19 @@ print(worst)
 
 # ## Predictive Analysis Tests
 
-# In[46]:
+# In[65]:
 
 
 [c for c in df_hair.columns if "_pct" in c.lower()]
 
 
-# In[47]:
+# In[66]:
 
 
 [c for c in df_hair.columns if "emotion" in c.lower()]
 
 
-# In[48]:
+# In[67]:
 
 
 #TEST #5: Predictive Analysis Forecast
@@ -1344,7 +1387,7 @@ forecast_chart
 
 # ## Diagnostic Analytic Test
 
-# In[49]:
+# In[68]:
 
 
 # Make sure data is loaded
@@ -1357,7 +1400,7 @@ results.keys()
 
 # ## Prescriptive Analytic Test
 
-# In[50]:
+# In[69]:
 
 
 df_hair, lookup_hair = load_and_preprocess_data("Hair")
