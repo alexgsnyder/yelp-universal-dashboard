@@ -4,3 +4,4 @@ pandas
 numpy
 altair
 scikit-learn
+statsmodels
