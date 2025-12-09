@@ -1375,67 +1375,95 @@ if __name__ == "__main__":
 
 # ## CODE TESTS
 
-# # TEST 1: Load updated data for both industries
-# 
-# #Hair
-# df_hair, lookup_hair = load_and_preprocess_data("Hair")
-# print("Hair data shape:", df_hair.shape if df_hair is not None else "No data loaded")
-# print("Hair lookup preview:")
-# print(lookup_hair.head() if lookup_hair is not None else "No lookup loaded")
-# 
-# print("\n" + "-"*60 + "\n")
-# 
-# #Mexican Food
-# df_mex, lookup_mex = load_and_preprocess_data("Mexican Food")
-# print("Mexican data shape:", df_mex.shape if df_mex is not None else "No data loaded")
-# print("Mexican lookup preview:")
-# print(lookup_mex.head() if lookup_mex is not None else "No lookup loaded")
+# In[132]:
 
-# # TEST 2: Apply a simple business-name filter on Hair data
-# 
-# # Make sure df_hair and lookup_hair exist from TEST 1
-# if df_hair is None or lookup_hair is None:
-#     print("Run Test 1 first so df_hair and lookup_hair are defined.")
-# else:
-#     sample_name = lookup_hair.select('name').to_series().to_list()[0]
-#     print("Sample business name:", sample_name)
-# 
-#     df_subset, label = apply_user_filters(
-#         df_full=df_hair,
-#         business_lookup=lookup_hair,
-#         business_id_filter=None,
-#         business_name=sample_name,
-#         state_filter=None,
-#         city_filter=None
-#     )
-# 
-#     print("Subset label:", label)
-#     print("Subset shape:", df_subset.shape)
+
+# TEST 1: Load updated data for both industries
+
+#Hair
+df_hair, lookup_hair = load_and_preprocess_data("Hair")
+print("Hair data shape:", df_hair.shape if df_hair is not None else "No data loaded")
+print("Hair lookup preview:")
+print(lookup_hair.head() if lookup_hair is not None else "No lookup loaded")
+
+print("\n" + "-"*60 + "\n")
+
+#Mexican Food
+df_mex, lookup_mex = load_and_preprocess_data("Mexican Food")
+print("Mexican data shape:", df_mex.shape if df_mex is not None else "No data loaded")
+print("Mexican lookup preview:")
+print(lookup_mex.head() if lookup_mex is not None else "No lookup loaded")
+
+
+# In[133]:
+
+
+# TEST 2: Apply a simple business-name filter on Hair data
+
+# Make sure df_hair and lookup_hair exist from TEST 1
+if df_hair is None or lookup_hair is None:
+    print("Run Test 1 first so df_hair and lookup_hair are defined.")
+else:
+    sample_name = lookup_hair.select('name').to_series().to_list()[0]
+    print("Sample business name:", sample_name)
+
+    df_subset, label = apply_user_filters(
+        df_full=df_hair,
+        business_lookup=lookup_hair,
+        business_id_filter=None,
+        business_name=sample_name,
+        state_filter=None,
+        city_filter=None
+    )
+
+    print("Subset label:", label)
+    print("Subset shape:", df_subset.shape)
+
 
 # ## Descriptive Analysis Tests
 
-# #TEST 3: Descriptive Analysis
-# df_hair, lookup_hair = load_and_preprocess_data("Hair")
-# line_chart, pie_chart, best, worst = descriptive_analysis(df_hair, lookup_hair)
-# line_chart
+# In[134]:
 
-# # Inspect all "star" / "weight" columns in the updated data
-# [c for c in df_hair.columns if "star" in c.lower() or "weight" in c.lower() or "tdw" in c.lower()]
 
-# #TEST #4: Top 5 Best & Top 5 Worst
-# line_chart, pie_chart, best, worst = descriptive_analysis(df_hair, lookup_hair)
-# 
-# print("Top 5 Best Locations:")
-# print(best)
-# 
-# print("\nTop 5 Worst Locations:")
-# print(worst)
+#TEST 3: Descriptive Analysis
+df_hair, lookup_hair = load_and_preprocess_data("Hair")
+line_chart, pie_chart, best, worst = descriptive_analysis(df_hair, lookup_hair)
+line_chart
+
+
+# In[135]:
+
+
+# Inspect all "star" / "weight" columns in the updated data
+[c for c in df_hair.columns if "star" in c.lower() or "weight" in c.lower() or "tdw" in c.lower()]
+
+
+# In[136]:
+
+
+#TEST #4: Top 5 Best & Top 5 Worst
+line_chart, pie_chart, best, worst = descriptive_analysis(df_hair, lookup_hair)
+
+print("Top 5 Best Locations:")
+print(best)
+
+print("\nTop 5 Worst Locations:")
+print(worst)
+
 
 # ## Predictive Analysis Tests
 
-# [c for c in df_hair.columns if "_pct" in c.lower()]
+# In[137]:
 
-# [c for c in df_hair.columns if "emotion" in c.lower()]
+
+[c for c in df_hair.columns if "_pct" in c.lower()]
+
+
+# In[138]:
+
+
+[c for c in df_hair.columns if "emotion" in c.lower()]
+
 
 # #TEST #5: Predictive Analysis Forecast
 # forecast_chart, predicted_star = predictive_analysis(df_hair, periods=6)
@@ -1444,28 +1472,36 @@ if __name__ == "__main__":
 
 # ## Diagnostic Analytic Test
 
-# # Make sure data is loaded
-# df_hair, lookup_hair = load_and_preprocess_data("Hair")
-# 
-# # Run Eddie's diagnostic analysis on the Hair subset
-# results = diagnostic_analysis(df_hair, lookup_hair)
-# results.keys()
+# In[140]:
+
+
+# Make sure data is loaded
+df_hair, lookup_hair = load_and_preprocess_data("Hair")
+
+# Run Eddie's diagnostic analysis on the Hair subset
+results = diagnostic_analysis(df_hair, lookup_hair)
+results.keys()
+
 
 # ## Prescriptive Analytic Test
 
-# df_hair, lookup_hair = load_and_preprocess_data("Hair")
-# 
-# presc_results = prescriptive_analysis(df_hair, lookup_hair)
-# 
-# print("High-level recommendation:")
-# print(presc_results["recommendation"])
-# print("\nAction metric:", presc_results["action_metric"])
-# print("\nRecommended actions:")
-# for a in presc_results["recommended_actions"]:
-#     print("-", a)
-# 
-# print("\nFirst few flagged businesses:")
-# print(presc_results["business_flags"].head())
+# In[141]:
+
+
+df_hair, lookup_hair = load_and_preprocess_data("Hair")
+
+presc_results = prescriptive_analysis(df_hair, lookup_hair)
+
+print("High-level recommendation:")
+print(presc_results["recommendation"])
+print("\nAction metric:", presc_results["action_metric"])
+print("\nRecommended actions:")
+for a in presc_results["recommended_actions"]:
+    print("-", a)
+
+print("\nFirst few flagged businesses:")
+print(presc_results["business_flags"].head())
+
 
 # In[ ]:
 
