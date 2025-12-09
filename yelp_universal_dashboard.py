@@ -19,7 +19,7 @@
 # > - Drop overly granular `_pct` columns (e.g., `adv_pct`, `noun_pct`, `adj_pct`, `verb_pct`) **only during data loading**, not in the source files.  
 # > - Final code should end with a callable `yelp_dashboard()` master function.
 
-# In[52]:
+# In[102]:
 
 
 #2. Imports & File Paths
@@ -69,7 +69,7 @@ BUSINESS_AGGREGATED_PATH = "business_aggregated_sample.csv"
 # 
 # We will gradually fill these functions in as we refactor Lily's prototype code.
 
-# In[53]:
+# In[103]:
 
 
 #3. Helper & Utility Functions (Scaffold)
@@ -222,7 +222,7 @@ def apply_user_filters(df_full: pl.DataFrame,
 
 # ## Descriptive Analysis
 
-# In[54]:
+# In[104]:
 
 
 def descriptive_analysis(df: pl.DataFrame, business_lookup: pl.DataFrame):
@@ -436,160 +436,128 @@ def descriptive_analysis(df: pl.DataFrame, business_lookup: pl.DataFrame):
 
 # ## Predictive Analysis
 
-# In[55]:
+# In[105]:
 
 
 def predictive_analysis(df: pl.DataFrame, periods: int = 6):
     """
-    Predict future average star ratings using ARIMA.
+    Predictive analysis: time-series forecast of average star rating.
 
     Parameters
     ----------
     df : pl.DataFrame
-        Filtered review dataset.
+        Filtered review-level data for the current slice.
     periods : int
-        Number of months to forecast.
+        Number of future months to forecast.
 
     Returns
     -------
     forecast_chart : alt.Chart or None
-        Chart with historical + forecasted ratings.
-    predicted_star : float
-        Star prediction for the final forecasted month.
+        Line chart showing historical and forecasted star ratings.
+    info : dict
+        {
+            'predicted_star': float,
+            'forecast_horizon_months': int
+        }
     """
-
-    # ---------------------------
-    # 1. Ensure review_date exists
-    # ---------------------------
+    
+    # Guard rails: need date and stars
     if "review_date" not in df.columns or "stars" not in df.columns:
-        raise ValueError("DataFrame must contain 'review_date' and 'stars' columns.")
+        return None, {"predicted_star": np.nan, "forecast_horizon_months": periods}
 
-    # ---------------------------
-    # 2. Parse review_date → month
-    # ---------------------------
-    try:
-        df_ts = df.with_columns(
-            pl.col("review_date")
-            .str.strptime(pl.Date, strict=False)
-            .cast(pl.Datetime)
-            .dt.truncate("1mo")
-        )
-    except Exception:
-        df_ts = df.with_columns(
-            pl.col("review_date")
-            .cast(pl.Datetime)
-            .dt.truncate("1mo")
-        )
+    # Convert to pandas and ensure proper datetime / sort
+    pdf = df.select(["review_date", "stars"]).to_pandas()
+    pdf["review_date"] = pd.to_datetime(pdf["review_date"])
+    pdf = pdf.sort_values("review_date")
 
-    # ---------------------------
-    # 3. Build monthly star series
-    # ---------------------------
-    ts_df = (
-        df_ts
-        .group_by("review_date")
-        .agg(pl.col("stars").mean().alias("mean_star"))
-        .sort("review_date")
-        .to_pandas()
-        .set_index("review_date")
+    # Monthly average star rating
+    monthly = (
+        pdf.set_index("review_date")["stars"]
+        .resample("MS")  # Month start frequency
+        .mean()
+        .ffill()
     )
 
-    # Resample monthly (ensure continuous)
-    ts_df = ts_df.resample("M").ffill()
+    # If we do not have enough history, fall back to trend only
+    if len(monthly) < 6:
+        hist_df = monthly.reset_index()
+        hist_df.columns = ["date", "avg_stars"]
 
-    # If dataset too small → fallback
-    if len(ts_df) < 12:
-        last_val = float(ts_df["mean_star"].iloc[-1])
-        return None, last_val
-
-    # ---------------------------
-    # 4. Fit ARIMA Model
-    # ---------------------------
-    try:
-        model = ARIMA(ts_df["mean_star"], order=(5, 1, 0))
-        model_fit = model.fit()
-
-        # Forecast next N months
-        forecast = model_fit.predict(
-            start=len(ts_df),
-            end=len(ts_df) + periods - 1
-        )
-
-        # Build forecast index
-        forecast_index = [
-            ts_df.index[-1] + pd.DateOffset(months=i+1)
-            for i in range(periods)
-        ]
-
-        forecast_df = pd.DataFrame({
-            "review_date": forecast_index,
-            "mean_star": forecast.values,
-            "type": "Forecast"
-        })
-
-        # Historical df
-        hist_df = ts_df.reset_index()
-        hist_df["type"] = "Historical"
-
-        # Combine for plotting
-        combined_df = pd.concat([hist_df, forecast_df], ignore_index=True)
-
-                # ---------------------------
-        # 5. Build Altair Forecast Chart
-        # ---------------------------
-        
-        # Separate historical and forecast for clean layering
-        hist_pd = hist_df.copy()
-        fc_pd = forecast_df.copy()
-
-        chart_hist = (
-            alt.Chart(hist_pd)
-            .mark_line(color="#f28e2b", strokeWidth=2)  # Orange
+        chart = (
+            alt.Chart(hist_df)
+            .mark_line()
             .encode(
-                x=alt.X("review_date:T", title="Date"),
-                y=alt.Y("mean_star:Q", title="Average Star Rating",
-                        scale=alt.Scale(domain=[0, 5])),
-                tooltip=[
-                    alt.Tooltip("review_date:T", title="Date"),
-                    alt.Tooltip("mean_star:Q", title="Avg Stars", format=".2f"),
-                ],
+                x="date:T",
+                y=alt.Y("avg_stars:Q", title="Average Star Rating"),
+                tooltip=["date:T", "avg_stars:Q"],
             )
-        )
-
-        chart_fc = (
-            alt.Chart(fc_pd)
-            .mark_line(color="#4e79a7", strokeWidth=2)  # Blue
-            .encode(
-                x="review_date:T",
-                y="mean_star:Q",
-                tooltip=[
-                    alt.Tooltip("review_date:T", title="Date"),
-                    alt.Tooltip("mean_star:Q", title="Forecast", format=".2f"),
-                ],
-            )
-        )
-
-        forecast_chart = (
-            (chart_hist + chart_fc)
             .properties(
-                title=f"Star Rating Forecast ({periods} Months)",
-                width=700,
-                height=400,
+                title="Star Rating Trend (insufficient history for robust forecast)"
             )
         )
 
-        predicted_star = float(forecast.values[-1])
+        last_val = float(hist_df["avg_stars"].iloc[-1])
+        return chart, {
+            "predicted_star": last_val,
+            "forecast_horizon_months": periods,
+        }
 
-        return forecast_chart, predicted_star
+    # Fit a simple ARIMA model
+    model = ARIMA(monthly, order=(1, 1, 1))
+    fitted = model.fit()
 
-    except Exception as e:
-        print("ARIMA failed:", e)
-        last_val = float(ts_df["mean_star"].iloc[-1])
-        return None, last_val
+    # Forecast future months
+    forecast_values = fitted.forecast(steps=periods)
+
+    last_date = monthly.index[-1]
+    future_index = pd.date_range(
+        start=last_date + pd.offsets.MonthBegin(1),
+        periods=periods,
+        freq="MS",
+    )
+
+    forecast_series = pd.Series(forecast_values.values, index=future_index)
+
+    # Build data for plotting
+    hist_df = monthly.reset_index()
+    hist_df.columns = ["date", "avg_stars"]
+
+    forecast_df = forecast_series.reset_index()
+    forecast_df.columns = ["date", "forecast_star"]
+
+    hist_plot = hist_df[["date", "avg_stars"]].copy()
+    hist_plot["series"] = "Historical"
+    hist_plot = hist_plot.rename(columns={"avg_stars": "star"})
+
+    forecast_plot = forecast_df[["date", "forecast_star"]].copy()
+    forecast_plot["series"] = "Forecast"
+    forecast_plot = forecast_plot.rename(columns={"forecast_star": "star"})
+
+    combined = pd.concat([hist_plot, forecast_plot], ignore_index=True)
+
+    forecast_chart = (
+        alt.Chart(combined)
+        .mark_line()
+        .encode(
+            x="date:T",
+            y=alt.Y("star:Q", title="Average Star Rating"),
+            color=alt.Color("series:N", title="Series"),
+            tooltip=["date:T", "star:Q", "series:N"],
+        )
+        .properties(title=f"Star Rating Forecast ({periods} Months Ahead)")
+    )
+
+    predicted_star = float(forecast_plot["star"].iloc[-1])
+
+    return forecast_chart, {
+        "predicted_star": predicted_star,
+        "forecast_horizon_months": periods,
+    }
 
 
 # ## Diagnostic Analysis
 
-# In[56]:
+# In[106]:
 
 
 def diagnostic_analysis(
@@ -617,23 +585,29 @@ def diagnostic_analysis(
           'at_risk_businesses': pandas.DataFrame
         }
     """
+    import pandas as pd
+    import numpy as np
+    import altair as alt
+    import re
 
-    # -------------------------------
-    # 1. Pain points from low-star reviews
-    # -------------------------------
+    # -------------------------------------------------------
+    # 1) Pain points from low-star reviews
+    # -------------------------------------------------------
     STOPWORDS = {
-        'the','and','for','that','this','with','you','have','are','but','not','was','were',
-        'they','from','your','their','has','had','our','all','too','just','then','what',
-        'when','there','which','will','been','into','out','about','like','theyre','dont','cant'
+        "the", "and", "for", "that", "this", "with", "you", "have", "are", "but", "not",
+        "was", "were", "they", "from", "your", "their", "has", "had", "our", "all", "too",
+        "just", "then", "what", "when", "there", "which", "will", "been", "into", "out",
+        "about", "like", "theyre", "dont", "cant",
+        # extra generic verbs we do not want as pain points
+        "went", "got"
     }
 
     def _tokenize(text: str):
         if not isinstance(text, str):
             return []
         words = re.findall(r"\b[a-zA-Z]{3,}\b", text.lower())
-        return [w for w in words if w not in STOPWORDS]
+        return [w for w in words if w not in STOPWORDS and w not in {"went", "got"}]
 
-    # pick a text column
     text_col = None
     for c in ["stripped_review", "text", "raw_review"]:
         if c in df.columns:
@@ -660,17 +634,19 @@ def diagnostic_analysis(
                     .encode(
                         x=alt.X("Frequency:Q", title="Frequency in Low-Rated Reviews"),
                         y=alt.Y("Word:N", sort="-x", title="Pain Point"),
-                        tooltip=["Word", "Frequency"],
+                        tooltip=["Word", "Frequency"]
                     )
                     .properties(title="Top Pain Points", width=600, height=400)
                 )
 
-    # -------------------------------
-    # 2. Emotion summary
-    # -------------------------------
+    # -------------------------------------------------------
+    # 2) Emotion summary
+    # -------------------------------------------------------
     emotion_cols = [
         c for c in df.columns
-        if c.endswith("_pct") and any(k in c.lower() for k in ["anger", "fear", "joy", "sad", "disgust"])
+        if c.endswith("_int_avg") or (
+            c.endswith("_pct") and any(k in c for k in ["anger","fear","joy","sad","disgust"])
+        )
     ]
     emotion_summary = None
 
@@ -696,29 +672,41 @@ def diagnostic_analysis(
               .to_pandas()
         )
 
-    # -------------------------------
-    # 3. Linguistic correlations with stars
-    # -------------------------------
-    # Dynamically detect linguistic percentage columns
+    # -------------------------------------------------------
+    # 3) Linguistic correlations with stars
+    #     (this is the part we are FIXING)
+    # -------------------------------------------------------
+    # Use the averaged linguistic features created earlier
     ling_cols = [
         c for c in df.columns
-        if c.endswith("_pct") and any(tag in c for tag in ["noun", "verb", "adj", "adv"])
+        if c in ["avg_noun_pct", "avg_verb_pct", "avg_adj_pct", "avg_adv_pct"]
     ]
 
     ling_corr_df = pd.DataFrame(columns=["feature", "pearson_corr_with_stars"])
 
     if "stars" in df.columns and ling_cols:
         sub = df.select(["stars"] + ling_cols).to_pandas().dropna()
-        if len(sub) > 0:
-            corrs = sub.corr(method="pearson")["stars"].drop("stars")
-            ling_corr_df = (
-                corrs.reset_index()
-                     .rename(columns={"index": "feature", "stars": "pearson_corr_with_stars"})
-            )
 
-    # -------------------------------
-    # 4. At-risk businesses (recent decline)
-    # -------------------------------
+        if len(sub) > 0:
+            # Drop any columns with no variation (constant values)
+            usable_ling_cols = [
+                c for c in ling_cols
+                if sub[c].nunique(dropna=True) > 1
+            ]
+
+            if usable_ling_cols:
+                corrs = sub[["stars"] + usable_ling_cols].corr(method="pearson")["stars"]
+                corrs = corrs.drop(labels=["stars"])
+                ling_corr_df = (
+                    corrs.reset_index()
+                         .rename(columns={"index": "feature",
+                                          "stars": "pearson_corr_with_stars"})
+                )
+            # If no usable columns, ling_corr_df stays as an empty DataFrame
+
+    # -------------------------------------------------------
+    # 4) At-risk businesses (same logic as before)
+    # -------------------------------------------------------
     at_risk_df = pd.DataFrame()
 
     if all(x in df.columns for x in ["business_id", "review_date", "stars"]):
@@ -734,7 +722,6 @@ def diagnostic_analysis(
                 pl.col("review_date").cast(pl.Datetime).dt.truncate("1mo")
             )
 
-        # latest date in this subset
         now = df_dt.select(pl.col("review_date").max()).item()
         now = pd.to_datetime(now) if now else pd.Timestamp.now()
 
@@ -747,23 +734,28 @@ def diagnostic_analysis(
             (pl.col("review_date") < six_months_ago)
         )
 
-        recent_stats = recent.group_by("business_id").agg([
-            pl.col("stars").mean().alias("recent_mean_star"),
-            (pl.col("stars") < 3.0).sum().alias("recent_low_count"),
-            pl.count().alias("recent_review_count"),
-        ])
-        prior_stats = prior.group_by("business_id").agg([
-            pl.col("stars").mean().alias("prior_mean_star"),
-            (pl.col("stars") < 3.0).sum().alias("prior_low_count"),
-            pl.count().alias("prior_review_count"),
-        ])
+        recent_stats = recent.group_by("business_id").agg(
+            [
+                pl.col("stars").mean().alias("recent_mean_star"),
+                (pl.col("stars") < 3.0).sum().alias("recent_low_count"),
+                pl.count().alias("recent_review_count")
+            ]
+        )
+        
+        prior_stats = prior.group_by("business_id").agg(
+            [
+                pl.col("stars").mean().alias("prior_mean_star"),
+                (pl.col("stars") < 3.0).sum().alias("prior_low_count"),
+                pl.count().alias("prior_review_count")
+            ]
+        )
 
         risk = recent_stats.join(prior_stats, on="business_id", how="left").to_pandas().fillna(0)
         risk["decline"] = risk["prior_mean_star"] - risk["recent_mean_star"]
         risk["recent_low_pct"] = np.where(
             risk["recent_review_count"] > 0,
             risk["recent_low_count"] / risk["recent_review_count"],
-            0,
+            0
         )
 
         def _flag(row):
@@ -773,24 +765,26 @@ def diagnostic_analysis(
 
         risk["at_risk_flag"] = risk.apply(_flag, axis=1)
 
-        # attach business info
         if "business_id" in business_lookup.columns:
             risk = risk.merge(business_lookup.to_pandas(), on="business_id", how="left")
 
         at_risk_df = risk.sort_values(["at_risk_flag", "decline"], ascending=[False, False])
 
+    # -------------------------------------------------------
+    # Return dictionary
+    # -------------------------------------------------------
     return {
         "pain_point_chart": pain_point_chart,
         "pain_points_df": pain_points_df,
         "emotion_summary": emotion_summary,
         "linguistic_correlations": ling_corr_df,
-        "at_risk_businesses": at_risk_df,
+        "at_risk_businesses": at_risk_df
     }
 
 
 # ## Prescriptive Analysis
 
-# In[57]:
+# In[107]:
 
 
 def prescriptive_analysis(df: pl.DataFrame, business_lookup: pl.DataFrame):
@@ -934,25 +928,37 @@ def prescriptive_analysis(df: pl.DataFrame, business_lookup: pl.DataFrame):
 
 # ### Streamlit Page Setup & User Input
 
-# In[58]:
+# In[108]:
 
 
 #5. Master Function Scaffold
 def yelp_dashboard():
     """
     Master function for the Yelp Universal Business Dashboard.
+    Assumes the following helper functions already exist in the notebook:
 
-    High-level flow:
-      1. Configure Streamlit page and sidebar inputs.
-      2. Load & preprocess data for the chosen industry.
-      3. Apply user filters to create the analysis subset.
-      4. Run analytics (Descriptive, Predictive, Diagnostic, Prescriptive).
-      5. Build dashboard layout & display (to be added later).
+        load_and_preprocess_data(industry: str) -> (pl.DataFrame, pl.DataFrame)
+        apply_user_filters(
+            df_full: pl.DataFrame,
+            business_lookup: pl.DataFrame,
+            business_id_filter=None,
+            business_name=None,
+            state_filter=None,
+            city_filter=None,
+        ) -> (pl.DataFrame, str)
+
+        descriptive_analysis(df: pl.DataFrame, business_lookup: pl.DataFrame)
+        predictive_analysis(df: pl.DataFrame, periods: int)
+        diagnostic_analysis(df: pl.DataFrame,
+                            business_lookup: pl.DataFrame,
+                            top_n: int)
+        prescriptive_analysis(df: pl.DataFrame,
+                              business_lookup: pl.DataFrame)
     """
 
-    # ---------------------------------------------------------
-    # 1. Streamlit Page Setup & User Input
-    # ---------------------------------------------------------
+    # ------------------------------------------------------------------
+    # 1. Streamlit Page Setup and sidebar controls
+    # ------------------------------------------------------------------
     st.set_page_config(
         page_title="Yelp Universal Business Dashboard",
         layout="wide",
@@ -960,7 +966,7 @@ def yelp_dashboard():
 
     st.sidebar.title("Yelp Universal Dashboard")
 
-    # Industry selection (required)
+    # Industry selector
     industry_choice = st.sidebar.selectbox(
         "Select Industry",
         options=["Hair", "Mexican Food"],
@@ -968,14 +974,6 @@ def yelp_dashboard():
     )
 
     st.sidebar.markdown("### Filters (optional)")
-
-    # Keep business ID and state as text inputs
-    business_id = st.sidebar.text_input("Business ID (exact match)")
-    state = st.sidebar.text_input("State (e.g., CA, NY)")
-
-    # Placeholders for dropdown values (we'll fill these after data loads)
-    business_name = None
-    city = None
 
     # Forecast horizon for predictive analysis
     periods = st.sidebar.slider(
@@ -986,7 +984,7 @@ def yelp_dashboard():
         step=1,
     )
 
-    # Diagnostic – number of pain-point keywords
+    # How many pain-point keywords to show in diagnostic analysis
     top_n_pain_points = st.sidebar.slider(
         "Number of Pain-Point Keywords",
         min_value=5,
@@ -995,277 +993,393 @@ def yelp_dashboard():
         step=5,
     )
 
-    # ---------------------------------------------------------
-    # 2. Data Loading & Preprocessing
-    # ---------------------------------------------------------
-    st.header("Data Loading & Preprocessing")
-    st.subheader("Loading Data...")
+    # ------------------------------------------------------------------
+    # 2. Data Loading and preprocessing
+    # ------------------------------------------------------------------
+    st.subheader("Data Loading and Preprocessing")
 
     try:
-        df, business_lookup = load_and_preprocess_data(industry_choice)
+        df_full, business_lookup = load_and_preprocess_data(industry_choice)
     except Exception as e:
         st.error(f"Error loading data: {e}")
         return
 
-    st.success(f"Data loaded successfully! Total reviews: {len(df)}")
+    st.success(f"Data loaded successfully. Total reviews: {len(df_full)}")
 
-    # --------------------------------
-    # Dropdowns for Business Name and City
-    # --------------------------------
-    with st.sidebar.expander("Business / Location Filters", expanded=False):
-        # Business Name dropdown (optional)
-        name_col = "name" if "name" in business_lookup.columns else "business_name"
-        try:
-            business_name_options = ["(All)"] + sorted(
-                business_lookup[name_col].drop_nulls().unique().to_list()
-            )
-        except Exception:
-            business_name_options = ["(All)"]
+    # Ensure we have a pandas view of the business lookup for dropdowns
+    if hasattr(business_lookup, "to_pandas"):
+        lookup_pd = business_lookup.to_pandas()
+    else:
+        lookup_pd = business_lookup.copy()
 
-        selected_business_name = st.selectbox(
-            "Business Name",
-            options=business_name_options,
-            index=0,
-        )
+    # Standardize name, city, state for cleaner search and deduplication
+    for col in ["name", "city", "state"]:
+        if col in lookup_pd.columns:
+            lookup_pd[col] = lookup_pd[col].astype(str)
 
-        if selected_business_name != "(All)":
-            business_name = selected_business_name
+    if "name" in lookup_pd.columns:
+        lookup_pd["name_std"] = lookup_pd["name"].str.title()
+    else:
+        lookup_pd["name_std"] = ""
 
-        # City dropdown (optional)
-        if "city" in business_lookup.columns:
-            try:
-                city_options = ["(All)"] + sorted(
-                    business_lookup["city"].drop_nulls().unique().to_list()
-                )
-            except Exception:
-                city_options = ["(All)"]
+    if "city" in lookup_pd.columns:
+        lookup_pd["city_std"] = lookup_pd["city"].str.title()
+    else:
+        lookup_pd["city_std"] = ""
 
-            selected_city = st.selectbox(
-                "City",
-                options=city_options,
-                index=0,
-            )
+    if "state" in lookup_pd.columns:
+        lookup_pd["state_std"] = lookup_pd["state"].str.upper()
+    else:
+        lookup_pd["state_std"] = ""
 
-            if selected_city != "(All)":
-                city = selected_city
-    
-    # ---------------------------------------------------------
-    # 3. Apply User Filters
-    # ---------------------------------------------------------
-    st.header("Filter Selection & Subset Creation")
+    # Composite label: Business Name (City, ST)
+    lookup_pd["display_label"] = lookup_pd.apply(
+        lambda r: f"{r['name_std']} ({r['city_std']}, {r['state_std']})",
+        axis=1,
+    )
+
+    # ------------------------------------------------------------------
+    # 3. Sidebar business / location filters (now using dropdowns)
+    # ------------------------------------------------------------------
+    st.sidebar.markdown("### Business / Location Filters")
+
+    # Business name dropdown (includes All)
+    business_options = ["All"]
+    business_options += sorted(lookup_pd["display_label"].drop_duplicates().tolist())
+
+    selected_business_label = st.sidebar.selectbox(
+        "Business Name",
+        options=business_options,
+        index=0,
+    )
+
+    # City dropdown (derived from lookup)
+    city_options = ["All"]
+    if "city_std" in lookup_pd.columns:
+        city_options += sorted(lookup_pd["city_std"].drop_duplicates().tolist())
+
+    selected_city = st.sidebar.selectbox(
+        "City",
+        options=city_options,
+        index=0,
+    )
+
+    # State input (two-letter code)
+    selected_state_input = st.sidebar.text_input("State (e.g., CA, NY)")
+    selected_state = selected_state_input.strip().upper() if selected_state_input else None
+
+    # Translate selected business into underlying filters
+    business_id_filter = None
+    business_name_filter = None
+    city_filter = None
+    state_filter = None
+
+    if selected_business_label != "All":
+        # Look up the first matching business row
+        match = lookup_pd[lookup_pd["display_label"] == selected_business_label]
+        if len(match) > 0:
+            row = match.iloc[0]
+            business_id_filter = row.get("business_id")
+            business_name_filter = row.get("name_std")
+            city_filter = row.get("city_std")
+            state_filter = row.get("state_std")
+
+    # If a business is not selected, allow standalone city/state filters
+    if selected_business_label == "All":
+        if selected_city != "All":
+            city_filter = selected_city
+        if selected_state:
+            state_filter = selected_state
+
+    # ------------------------------------------------------------------
+    # 4. Apply filters to create df_filtered
+    # ------------------------------------------------------------------
+    st.subheader("Filter Selection and Subset Creation")
 
     df_filtered, subset_label = apply_user_filters(
-        df_full=df,
+        df_full=df_full,
         business_lookup=business_lookup,
-        business_id_filter=business_id or None,
-        business_name=business_name or None,
-        state_filter=state or None,
-        city_filter=city or None,
+        business_id_filter=business_id_filter,
+        business_name=business_name_filter,
+        state_filter=state_filter,
+        city_filter=city_filter,
     )
 
-    st.write(f"Current slice: **{subset_label}**")
-    st.write(f"Number of reviews in slice: **{len(df_filtered)}**")
-
-    if len(df_filtered) == 0:
-        st.warning("No data available for the selected filters. Adjust your filters and try again.")
+    if df_filtered is None or len(df_filtered) == 0:
+        st.warning("No reviews match the current filters. Try broadening your selection.")
         return
 
-    # Simple overall metrics (we'll use these in the layout later)
-    try:
-        avg_star_overall = float(df_filtered.select(pl.col("stars").mean()).item())
-    except Exception:
-        avg_star_overall = float("nan")
+    # Count distinct businesses in the filtered slice (if column exists)
+    if "business_id" in df_filtered.columns:
+        try:
+            distinct_businesses = int(df_filtered.select(pl.col("business_id").n_unique()).item())
+        except Exception:
+            distinct_businesses = None
+    else:
+        distinct_businesses = None
+
+    st.write(f"Current slice: {subset_label}")
+    st.write(f"Number of reviews in slice: {len(df_filtered)}")
+    if distinct_businesses is not None:
+        st.write(f"Distinct businesses in slice: {distinct_businesses}")
+
+    st.markdown("---")
+
+    # ------------------------------------------------------------------
+    # 5. Descriptive Analytics
+    # ------------------------------------------------------------------
+    st.header("Descriptive Analytics")
+
+    desc_results = descriptive_analysis(df_filtered, business_lookup)
+
+    rating_trend_chart = None
+    emotion_pie = None
+    best_df = None
+    worst_df = None
+
+    if isinstance(desc_results, dict):
+        rating_trend_chart = desc_results.get("rating_trend_chart")
+        emotion_pie = desc_results.get("emotion_pie")
+        best_df = desc_results.get("best_locations")
+        worst_df = desc_results.get("worst_locations")
+    elif isinstance(desc_results, (list, tuple)):
+        if len(desc_results) >= 1:
+            rating_trend_chart = desc_results[0]
+        if len(desc_results) >= 2:
+            emotion_pie = desc_results[1]
+        if len(desc_results) >= 3:
+            best_df = desc_results[2]
+        if len(desc_results) >= 4:
+            worst_df = desc_results[3]
+
+    # 5.1 Star ratings over time
+    if rating_trend_chart is not None:
+        st.altair_chart(rating_trend_chart, use_container_width=True)
+
+    # 5.2 Emotion pie chart with percent and count labels
+    st.subheader("Emotion Distribution")
+
+    emotion_chart_rendered = False
+    pie_chart = emotion_pie  # fallback from descriptive_analysis, if provided
 
     try:
-        n_businesses = int(df_filtered.select(pl.col("business_id").n_unique()).item())
+        if "dominant_emotion" in df_filtered.columns:
+            emo_df = (
+                df_filtered
+                .to_pandas()
+                ["dominant_emotion"]
+                .dropna()
+                .value_counts()
+                .rename_axis("emotion")
+                .reset_index(name="count")
+            )
+
+            if len(emo_df) > 0:
+                total = emo_df["count"].sum()
+                emo_df["percent"] = emo_df["count"] / total * 100.0
+
+                emo_df["label"] = emo_df.apply(
+                    lambda r: f"{r['emotion']} ({r['count']}, {r['percent']:.1f}%)",
+                    axis=1,
+                )
+
+                base = alt.Chart(emo_df)
+
+                pie = base.mark_arc().encode(
+                    theta=alt.Theta("count:Q", stack=True),
+                    color=alt.Color("emotion:N", legend=alt.Legend(title="Emotion")),
+                )
+
+                text = base.mark_text(radius=100, size=11).encode(
+                    text=alt.Text("label:N"),
+                )
+
+                pie_chart_with_labels = pie + text
+
+                st.altair_chart(pie_chart_with_labels, use_container_width=True)
+                emotion_chart_rendered = True
     except Exception:
-        n_businesses = 0
+        # If anything goes wrong, we will fall back to the original chart
+        emotion_chart_rendered = False
 
-    # ---------------------------------------------------------
-    # 4. Run Analytics (Descriptive, Predictive, Diagnostic, Prescriptive)
-    # ---------------------------------------------------------
-    st.header("Running Analytics...")
+    if not emotion_chart_rendered:
+        if pie_chart is not None:
+            st.altair_chart(pie_chart, use_container_width=True)
+        else:
+            st.info("No emotion data available for this slice.")
 
-    # 4.1 Descriptive analysis (Alex)
-    line_chart, pie_chart, top_5_best, top_5_worst = descriptive_analysis(
-        df_filtered,
-        business_lookup,
-    )
+    # 5.3 Top 5 best and worst locations (displaying name + city, state)
+    col1, col2 = st.columns(2)
 
-    # 4.2 Predictive analysis (Alex)
-    forecast_chart, predicted_star = predictive_analysis(
-        df_filtered,
-        periods=periods,
-    )
+    with col1:
+        if best_df is not None:
+            if hasattr(best_df, "to_pandas"):
+                best_pd = best_df.to_pandas()
+            else:
+                best_pd = best_df.copy()
 
-    # 4.3 Diagnostic analysis (Eddie)
+            if len(best_pd) > 0:
+                if {"name", "city", "state"}.issubset(best_pd.columns):
+                    best_pd = best_pd.copy()
+                    best_pd["Location"] = (
+                        best_pd["name"].astype(str).str.title()
+                        + " ("
+                        + best_pd["city"].astype(str).str.title()
+                        + ", "
+                        + best_pd["state"].astype(str).str.upper()
+                        + ")"
+                    )
+
+                st.subheader("Top 5 Best Locations")
+                st.dataframe(best_pd)
+
+    with col2:
+        if worst_df is not None:
+            if hasattr(worst_df, "to_pandas"):
+                worst_pd = worst_df.to_pandas()
+            else:
+                worst_pd = worst_df.copy()
+
+            if len(worst_pd) > 0:
+                if {"name", "city", "state"}.issubset(worst_pd.columns):
+                    worst_pd = worst_pd.copy()
+                    worst_pd["Location"] = (
+                        worst_pd["name"].astype(str).str.title()
+                        + " ("
+                        + worst_pd["city"].astype(str).str.title()
+                        + ", "
+                        + worst_pd["state"].astype(str).str.upper()
+                        + ")"
+                    )
+
+                st.subheader("Top 5 Worst Locations")
+                st.dataframe(worst_pd)
+
+    st.markdown("---")
+
+    # ------------------------------------------------------------------
+    # 6. Predictive Analytics
+    # ------------------------------------------------------------------
+    st.header("Predictive Analytics")
+    
+    try:
+        forecast_chart, forecast_info = predictive_analysis(df_filtered, periods=periods)
+    except TypeError:
+        # For older versions of predictive_analysis that do not accept a keyword
+        forecast_chart, forecast_info = predictive_analysis(df_filtered, periods)
+    
+    if forecast_chart is not None:
+        st.altair_chart(forecast_chart, use_container_width=True)
+    
+    predicted_star = None
+    horizon = periods
+    
+    # New predictive_analysis returns a dict; handle both dict and scalar
+    if isinstance(forecast_info, dict):
+        predicted_star = forecast_info.get("predicted_star")
+        horizon = forecast_info.get("forecast_horizon_months", periods)
+    elif isinstance(forecast_info, (int, float)):
+        predicted_star = float(forecast_info)
+    
+    if predicted_star is not None:
+        st.write(
+            f"Predicted average star rating after {horizon} months: {predicted_star:.3f}"
+        )
+    
+    st.markdown("---")
+
+    # ------------------------------------------------------------------
+    # 7. Diagnostic Analytics
+    # ------------------------------------------------------------------
+    st.header("Diagnostic Analytics")
+
     diag_results = diagnostic_analysis(
         df_filtered,
         business_lookup,
         top_n=top_n_pain_points,
     )
 
-    # 4.4 Prescriptive analysis (Eddie)
-    presc_results = prescriptive_analysis(
-        df_filtered,
-        business_lookup,
-    )
+    pain_chart = None
+    pain_df = None
+    emotion_summary = None
+    ling_df = None
+    risk_df = None
 
-    st.success("Analytics completed successfully.")
+    if isinstance(diag_results, dict):
+        pain_chart = diag_results.get("pain_point_chart")
+        pain_df = diag_results.get("pain_points_df")
+        emotion_summary = diag_results.get("emotion_summary")
+        ling_df = diag_results.get("linguistic_correlations")
+        risk_df = diag_results.get("at_risk_businesses")
 
-        # ---------------------------------------------------------
-    # 5. Dashboard Layout & Display
-    # ---------------------------------------------------------
-
-    # ---- Top of dashboard ----
-    st.title("Yelp Business Health Dashboard")
-    st.subheader(f"Industry: {industry_choice}")
-    st.caption(
-        f"Current slice: **{subset_label}**  |  "
-        f"Reviews in slice: {len(df_filtered)}  |  "
-        f"Distinct businesses: {n_businesses}"
-    )
-
-    # Top-level metrics
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        if avg_star_overall == avg_star_overall:  # not NaN
-            st.metric("Average Star Rating (Current Slice)",
-                      f"{avg_star_overall:.2f}")
-        else:
-            st.metric("Average Star Rating (Current Slice)", "N/A")
-    with col2:
-        st.metric(f"Forecasted Stars in {periods} Months",
-                  f"{predicted_star:.2f}")
-    with col3:
-        st.metric("Number of Businesses", n_businesses)
-
-    # ---------------------------------------------------------
-    # 5.1 Descriptive Analysis
-    # ---------------------------------------------------------
-    st.header("1. Descriptive Analysis")
-
-    st.subheader("Star Ratings Over Time")
-    if line_chart is not None:
-        st.altair_chart(line_chart, use_container_width=True)
-    else:
-        st.info("Time series not available for this subset.")
-
-    cols = st.columns(2)
-    with cols[0]:
-        st.subheader("Top 5 Best Locations")
-        if top_5_best is not None:
-            try:
-                st.dataframe(top_5_best.to_pandas())
-            except AttributeError:
-                st.dataframe(top_5_best)
-        else:
-            st.info("No best-location summary available.")
-
-    with cols[1]:
-        st.subheader("Top 5 Worst Locations")
-        if top_5_worst is not None:
-            try:
-                st.dataframe(top_5_worst.to_pandas())
-            except AttributeError:
-                st.dataframe(top_5_worst)
-        else:
-            st.info("No worst-location summary available.")
-
-    st.subheader("Emotion Distribution")
-    if pie_chart is not None:
-        st.altair_chart(pie_chart, use_container_width=True)
-    else:
-        st.info("Emotion distribution not available for this subset.")
-
-    # ---------------------------------------------------------
-    # 5.2 Predictive Analysis
-    # ---------------------------------------------------------
-    st.header("2. Predictive Analysis")
-
-    if forecast_chart is not None:
-        st.subheader("Star Rating Forecast")
-        st.altair_chart(forecast_chart, use_container_width=True)
-    else:
-        st.info("Not enough historical data to fit a forecast model.")
-
-    st.markdown(
-        f"**Predicted average star rating in {periods} months:** "
-        f"{predicted_star:.2f}"
-    )
-
-    # ---------------------------------------------------------
-    # 5.3 Diagnostic Insights
-    # ---------------------------------------------------------
-    st.header("3. Diagnostic Insights")
-
-    # Pain points in low-star reviews
-    st.subheader("Pain Points in Low-Star Reviews")
-    pain_chart = diag_results.get("pain_point_chart")
-    pain_df = diag_results.get("pain_points_df")
+    # Pain-point chart
     if pain_chart is not None:
+        st.subheader("Top Pain-Point Keywords in Low-Rated Reviews")
         st.altair_chart(pain_chart, use_container_width=True)
-    elif pain_df is not None and not getattr(pain_df, "empty", False):
-        st.dataframe(pain_df.head(30))
-    else:
-        st.info("Not enough low-star review text to extract pain points.")
 
-    # Emotion summary
-    st.subheader("Emotion Summary")
-    emo = diag_results.get("emotion_summary")
-    if emo is not None and not getattr(emo, "empty", False):
-        st.dataframe(emo)
-    else:
-        st.info("Emotion summary not available for this subset.")
+    if pain_df is not None and len(pain_df) > 0:
+        st.dataframe(pain_df)
+
+    # Emotion summary table
+    if emotion_summary is not None and len(emotion_summary) > 0:
+        st.subheader("Emotion Intensity Summary")
+        st.dataframe(emotion_summary)
 
     # Linguistic correlations
-    st.subheader("Linguistic Correlations with Star Ratings")
-    ling = diag_results.get("linguistic_correlations")
-    if ling is not None and not getattr(ling, "empty", False):
-        st.dataframe(ling)
+    st.subheader("Linguistic Features vs Star Ratings")
+    if ling_df is not None and len(ling_df) > 0:
+        st.dataframe(ling_df)
     else:
-        st.info("Not enough variation in linguistic features to compute correlations.")
+        st.info("Linguistic correlations are not available for this slice (not enough variation in linguistic features).")
 
     # At-risk businesses
-    st.subheader("At-Risk Businesses (Recent Decline)")
-    risk_df = diag_results.get("at_risk_businesses")
-    if risk_df is not None and not getattr(risk_df, "empty", False):
-        # Show only top 30 rows for readability
-        st.dataframe(risk_df.head(30))
+    if risk_df is not None and len(risk_df) > 0:
+        st.subheader("Businesses Flagged as At Risk")
+        st.dataframe(risk_df.head(50))
+
+    st.markdown("---")
+
+    # ------------------------------------------------------------------
+    # 8. Prescriptive Analytics
+    # ------------------------------------------------------------------
+    st.header("Prescriptive Analytics")
+
+    presc_results = prescriptive_analysis(df_filtered, business_lookup)
+
+    if isinstance(presc_results, dict):
+        recommendation_text = presc_results.get("recommendation")
+        action_metric = presc_results.get("action_metric")
+        rec_actions = presc_results.get("recommended_actions", [])
+        business_flags = presc_results.get("business_flags")
+
+        st.subheader("High-Level Recommendation")
+        if recommendation_text:
+            st.markdown(recommendation_text)
+        else:
+            st.info("No recommendation text available.")
+
+        if action_metric is not None:
+            st.metric("Overall Action Metric (Average Stars)", f"{action_metric:.2f}")
+
+        st.subheader("Recommended Actions")
+        if rec_actions:
+            for action in rec_actions:
+                st.markdown(f"- {action}")
+        else:
+            st.info("No specific recommended actions generated.")
+
+        st.subheader("Flagged Businesses for Follow-up")
+        if business_flags is not None and getattr(business_flags, "empty", False) is False:
+            st.dataframe(business_flags.head(30))
+        else:
+            st.info("No businesses are currently flagged for prescriptive follow-up.")
     else:
-        st.info("No clear 'at risk' businesses based on recent trends in this subset.")
-
-    # ---------------------------------------------------------
-    # 5.4 Prescriptive Recommendations
-    # ---------------------------------------------------------
-    st.header("4. Prescriptive Recommendations")
-
-    st.subheader("High-Level Recommendation")
-    st.markdown(presc_results.get("recommendation", "No recommendation text available."))
-
-    action_metric = presc_results.get("action_metric")
-    if action_metric is not None:
-        st.metric("Overall Action Metric (Avg Stars)", f"{action_metric:.2f}")
-
-    st.subheader("Recommended Actions")
-    rec_actions = presc_results.get("recommended_actions", [])
-    if rec_actions:
-        for action in rec_actions:
-            st.markdown(f"- {action}")
-    else:
-        st.info("No specific recommended actions generated.")
-
-    st.subheader("Flagged Businesses (for Follow-up)")
-    flagged = presc_results.get("business_flags")
-    if flagged is not None and not getattr(flagged, "empty", False):
-        st.dataframe(flagged.head(30))
-    else:
-        st.info("No businesses are currently flagged for prescriptive follow-up.")
+        st.info("No prescriptive analysis results available.")
 
 
 # ## Entry Point / Function Call
 
-# In[59]:
+# In[109]:
 
 
 # ---------------------------------------------------------
@@ -1286,7 +1400,7 @@ if __name__ == "__main__":
 
 # ## CODE TESTS
 
-# In[60]:
+# In[110]:
 
 
 # TEST 1: Load updated data for both industries
@@ -1306,7 +1420,7 @@ print("Mexican lookup preview:")
 print(lookup_mex.head() if lookup_mex is not None else "No lookup loaded")
 
 
-# In[61]:
+# In[111]:
 
 
 # TEST 2: Apply a simple business-name filter on Hair data
@@ -1333,7 +1447,7 @@ else:
 
 # ## Descriptive Analysis Tests
 
-# In[62]:
+# In[112]:
 
 
 #TEST 3: Descriptive Analysis
@@ -1342,14 +1456,14 @@ line_chart, pie_chart, best, worst = descriptive_analysis(df_hair, lookup_hair)
 line_chart
 
 
-# In[63]:
+# In[113]:
 
 
 # Inspect all "star" / "weight" columns in the updated data
 [c for c in df_hair.columns if "star" in c.lower() or "weight" in c.lower() or "tdw" in c.lower()]
 
 
-# In[64]:
+# In[114]:
 
 
 #TEST #4: Top 5 Best & Top 5 Worst
@@ -1364,19 +1478,19 @@ print(worst)
 
 # ## Predictive Analysis Tests
 
-# In[65]:
+# In[115]:
 
 
 [c for c in df_hair.columns if "_pct" in c.lower()]
 
 
-# In[66]:
+# In[116]:
 
 
 [c for c in df_hair.columns if "emotion" in c.lower()]
 
 
-# In[67]:
+# In[117]:
 
 
 #TEST #5: Predictive Analysis Forecast
@@ -1387,7 +1501,7 @@ forecast_chart
 
 # ## Diagnostic Analytic Test
 
-# In[68]:
+# In[118]:
 
 
 # Make sure data is loaded
@@ -1400,7 +1514,7 @@ results.keys()
 
 # ## Prescriptive Analytic Test
 
-# In[69]:
+# In[119]:
 
 
 df_hair, lookup_hair = load_and_preprocess_data("Hair")
