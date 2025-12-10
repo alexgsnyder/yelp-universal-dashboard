@@ -845,5 +845,6 @@ with t6:
             "later based on more detailed modeling."
         )
 
+"""
 if __name__ == "__main__":
     yelp_dashboard()
