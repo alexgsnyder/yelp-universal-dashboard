@@ -25,11 +25,45 @@ from plotly.subplots import make_subplots
 
 warnings.filterwarnings('ignore')
 
+import plotly.subplots as subplots
+
+warnings.filterwarnings('ignore')
+
+# ---- GLOBAL STYLE OVERRIDES ----
+def set_streamlit_styles():
+    st.markdown(
+        """
+        <style>
+        /* Make all Streamlit buttons readable */
+        div.stButton > button {
+            background-color: #ffffff !important;
+            color: #000000 !important;
+            border-radius: 4px !important;
+            border: 1px solid #E6BE8A !important;  /* light gold */
+            font-weight: 600 !important;
+        }
+
+        /* Tabs: normal state */
+        .stTabs [data-baseweb="tab"] [data-testid="stMarkdownContainer"] p {
+            color: #ffffff !important;
+        }
+
+        /* Tabs: highlighted state */
+        .stTabs [data-baseweb="tab"][aria-selected="true"]
+            [data-testid="stMarkdownContainer"] p {
+            color: #000000 !important;
+            font-weight: 700 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
 # --- CONFIGURATION ---
-PATH_HAIR_PARQUET = 
-PATH_MEXICAN_PARQUET = 
-PATH_AGG_DATA =
-PATH_VOCAB_DATA = 
+PATH_HAIR_PARQUET = "hair_features.parquet"
+PATH_MEXICAN_PARQUET = "chipotle_features.parquet"
+PATH_AGG_DATA = "business_aggregated_features.csv"
+PATH_VOCAB_DATA = "industry_phrases_vocabulary.csv"
 
 US_STATES = {
     'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona', 'AR': 'Arkansas', 'CA': 'California',
@@ -43,6 +77,20 @@ US_STATES = {
     'SD': 'South Dakota', 'TN': 'Tennessee', 'TX': 'Texas', 'UT': 'Utah', 'VT': 'Vermont',
     'VA': 'Virginia', 'WA': 'Washington', 'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming'
 }
+
+# --------------------------------------------------
+# THEME COLORS (Neon Palette for Pie Charts)
+# --------------------------------------------------
+THEME_COLORS = [
+    "#FFD700",  # Gold
+    "#E6BE8A",  # Light Gold / Tan
+    "#C99700",  # Rich Golden Yellow
+    "#B8860B",  # Dark Goldenrod
+    "#8B6508",  # Brownish Gold
+    "#5C4033",  # Deep Brown
+    "#2B1B12",  # Very Dark Brown
+    "#000000",  # Black
+]
 
 # --- HELPER: DATA PROCESSING ---
 def perform_pca_composite(df):
@@ -92,7 +140,7 @@ def load_vocab():
             'stripped', 'text', 'text:', 'place', 'food', 'time', 'service', 'just', 'really',
             'said', 'asked', 'told', 'got', 'came', 'come', 'know', 'make', 'want', 'order', 'ordered',
             'im', 'ive', 't', 'th', '2', 'good', 'worst', 'love', 'amazing', 'eat',
-            'great', 'going', 'bad', 'dont', 'w'
+            'great', 'going', 'bad', 'dont', 'w', 'ok'
         ]
         stop_set.update(user_stops)
         
@@ -106,6 +154,7 @@ def load_vocab():
 
 # --- MASTER FUNCTION ---
 def yelp_dashboard():
+    set_streamlit_styles()
     print("="*70)
     print("   INITIATING DASHBOARD BUILD (CONTRAST FIX)")
     print("="*70)
@@ -226,7 +275,7 @@ def inject_custom_css():
         
         /* Headers - Neon Blue */
         h1, h2, h3 {{
-            color: #00F0FF !important; 
+            color: #FFD700 !important; 
             font-family: 'Segoe UI', sans-serif;
             text-shadow: 0 0 5px rgba(0, 240, 255, 0.3);
         }}
@@ -243,7 +292,7 @@ def inject_custom_css():
             padding: 15px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         }}
-        div[data-testid="stMetricValue"] {{ color: #00F0FF !important; }}
+        div[data-testid="stMetricValue"] {{ color: #FFD700 !important; }}
         
         /* --- CRITICAL FIX: DROPDOWN MENU CONTRAST --- */
         
@@ -272,13 +321,13 @@ def inject_custom_css():
         
         /* Hover state for options: NEON CYAN BG -> BLACK TEXT */
         li[role="option"]:hover, li[role="option"]:hover span, li[role="option"]:hover div {{
-            background-color: #00F0FF !important;
+            background-color: #FFD700 !important;
             color: #000000 !important;
         }}
         
         /* Active/Selected option: NEON CYAN BG -> BLACK TEXT */
         li[aria-selected="true"], li[aria-selected="true"] span, li[aria-selected="true"] div {{
-            background-color: #00F0FF !important;
+            background-color: #FFD700 !important;
             color: #000000 !important;
         }}
         
@@ -289,7 +338,7 @@ def inject_custom_css():
         }}
         /* Active Tab: NEON CYAN BG -> BLACK TEXT */
         .stTabs [aria-selected="true"] {{
-            background-color: #00F0FF !important;
+            background-color: #FFD700 !important;
             color: #000000 !important;
             font-weight: bold;
         }}
@@ -306,7 +355,9 @@ inject_custom_css()
 # --- GLOBAL PLOTLY THEME ---
 pio.templates.default = "plotly_dark"
 px.defaults.template = "plotly_dark"
-px.defaults.color_discrete_sequence = ["#00F0FF", "#FF00AA", "#00FF00", "#FFFF00", "#FF8800"]
+px.defaults.color_discrete_sequence = [
+    "#FFD700", "#E6BE8A", "#C99700", "#B8860B", "#8B6508"
+]
 
 @st.cache_data
 def load_data():
@@ -389,25 +440,108 @@ with t1:
         if valid_outliers:
             dist_choice = st.selectbox("Inspect Variable:", valid_outliers)
             fig_hist = px.histogram(df, x=VAR_MAP[dist_choice], title=f"Histogram: {{dist_choice}}", marginal="box")
-            fig_hist.update_traces(marker_color='#00F0FF') 
+            fig_hist.update_traces(marker_color='#FFD700') 
             st.plotly_chart(fig_hist, use_container_width=True)
 
     # 2. Correlation Heatmap
     with c2:
         st.markdown("**2. Correlation Matrix**")
-        corr_cols = ['stars', 'vader_sentiment', 'joy_intensity', 'anger_intensity', 'word_count', 'business_star_avg']
-        valid_corr = [c for c in corr_cols if c in df.columns]
-        if len(valid_corr) > 1:
-            corr_mat = df[valid_corr].corr()
-            fig_corr = px.imshow(corr_mat, text_auto=True, color_continuous_scale='RdBu_r', title="Key Variable Correlations")
-            st.plotly_chart(fig_corr, use_container_width=True)
+
+        # Select numeric columns automatically
+        num_df = df.select_dtypes(include=[np.number])
+
+        # Must have at least 2 numeric columns
+        if num_df.shape[1] >= 2:
+
+            # Drop rows where all numeric columns are NaN
+            num_df = num_df.dropna(how="all")
+
+            if not num_df.empty:
+                corr_mat = num_df.corr()
+
+                fig_corr = px.imshow(
+                    corr_mat,
+                    text_auto=True,
+                    color_continuous_scale="RdBu_r",
+                    zmin=-1, zmax=1,
+                    title="Key Variable Correlations"
+                )
+
+                st.plotly_chart(fig_corr, use_container_width=True)
+
+            else:
+                st.info("Not enough valid data to compute correlations for this selection.")
+
+        else:
+            st.info("Not enough numeric variables to compute a correlation matrix.")
 
     # 3. Pie Charts
-    c3, c4 = st.columns(2)
-    with c3:
-        if 'dominant_emotion' in df.columns: st.plotly_chart(px.pie(df, names='dominant_emotion', title="Emotion Distribution"), use_container_width=True)
-    with c4:
-        st.plotly_chart(px.pie(df, names='stars', title="Star Rating Distribution"), use_container_width=True)
+            st.markdown("**3. Pie Charts**")
+
+        # ------------------------------------------
+        # Emotion Distribution Pie
+        # ------------------------------------------
+        emo_df = df["dominant_emotion"].value_counts().reset_index()
+        emo_df.columns = ["emotion", "count"]
+
+        fig_emo = px.pie(
+            emo_df,
+            values="count",
+            names="emotion",
+            color="emotion",
+            color_discrete_sequence=THEME_COLORS,
+            hole=0.35
+        )
+
+        fig_emo.update_traces(
+            textposition="inside",
+            textinfo="percent+label",
+            pull=0.02
+        )
+
+        fig_emo.update_layout(
+            title="Emotion Distribution",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="white"),
+            showlegend=True
+        )
+
+        # ------------------------------------------
+        # Star Rating Distribution Pie
+        # ------------------------------------------
+        stars_df = df["stars"].value_counts().reset_index()
+        stars_df.columns = ["stars", "count"]
+
+        fig_stars = px.pie(
+            stars_df,
+            values="count",
+            names="stars",
+            color="stars",
+            color_discrete_sequence=THEME_COLORS,
+            hole=0.35
+        )
+
+        fig_stars.update_traces(
+            textposition="inside",
+            textinfo="percent+label",
+            pull=0.02
+        )
+
+        fig_stars.update_layout(
+            title="Star Rating Distribution",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(color="white"),
+            showlegend=True
+        )
+
+        # Display side-by-side
+        col1, col2 = st.columns(2)
+        with col1:
+            st.plotly_chart(fig_emo, use_container_width=True)
+        with col2:
+            st.plotly_chart(fig_stars, use_container_width=True)
 
     # 4. LEADERBOARD
     st.markdown("---")
@@ -425,8 +559,8 @@ with t2:
     if 'review_date' in df.columns and 'weighted_stars' in df.columns:
         monthly = df.set_index('review_date').resample('M').mean(numeric_only=True).reset_index()
         fig_line = make_subplots(specs=[[{{"secondary_y": True}}]])
-        fig_line.add_trace(go.Scatter(x=monthly['review_date'], y=monthly['stars'], name='Actual Stars', line=dict(color='#00F0FF')), secondary_y=False)
-        fig_line.add_trace(go.Scatter(x=monthly['review_date'], y=monthly['weighted_stars'], name='Weighted Stars', line=dict(color='#FF00AA', dash='dot')), secondary_y=True)
+        fig_line.add_trace(go.Scatter(x=monthly['review_date'], y=monthly['stars'], name='Actual Stars', line=dict(color='#FFD700')), secondary_y=False)
+        fig_line.add_trace(go.Scatter(x=monthly['review_date'], y=monthly['weighted_stars'], name='Weighted Stars', line=dict(color='#5C4033', dash='dot')), secondary_y=True)
         fig_line.update_layout(title="Historical Performance")
         st.plotly_chart(fig_line, use_container_width=True)
 
@@ -438,7 +572,7 @@ with t2:
         daily_sent = daily_sent[daily_sent['Count'] > 0]
         
         fig_stack = px.area(daily_sent, x='review_date', y='Count', color='Sentiment_Bucket', 
-                            color_discrete_map={{'Negative':'#FF00AA', 'Neutral':'#888888', 'Positive':'#00FF00'}},
+                            color_discrete_map={{'Negative':'#5C4033', 'Neutral':'#C99700', 'Positive':'#FFD700'}},
                             title="Review Volume by Sentiment Category")
         st.plotly_chart(fig_stack, use_container_width=True)
 
@@ -458,7 +592,7 @@ with t2:
     bench_data = pd.DataFrame({{
         'Scope': ['This Business', city_label, state_label, 'National Industry Avg'],
         'Stars': [current_biz_avg, city_avg, state_avg, national_avg],
-        'Color': ['#00F0FF', '#00FF00', '#FFFF00', '#FF00AA'] 
+        'Color': ['#FFD700', '#C99700', '#FFD700', '#5C4033'] 
     }})
     bench_data = bench_data[bench_data['Stars'] > 0]
     
@@ -524,7 +658,7 @@ with t3:
             if not neg_subset.empty:
                 neg_res = get_top_phrases(neg_subset, vocab)
                 if not neg_res.empty:
-                    fig_neg = px.bar(neg_res, x='count', y='phrase', orientation='h', title="Top Complaints", color_discrete_sequence=['#FF00AA'])
+                    fig_neg = px.bar(neg_res, x='count', y='phrase', orientation='h', title="Top Complaints", color_discrete_sequence=['#5C4033'])
                     fig_neg.update_layout(yaxis=dict(autorange="reversed"))
                     st.plotly_chart(fig_neg, use_container_width=True)
         with c2:
@@ -533,7 +667,7 @@ with t3:
             if not pos_subset.empty:
                 pos_res = get_top_phrases(pos_subset, vocab)
                 if not pos_res.empty:
-                    fig_pos = px.bar(pos_res, x='count', y='phrase', orientation='h', title="Top Praised Items", color_discrete_sequence=['#00FF00'])
+                    fig_pos = px.bar(pos_res, x='count', y='phrase', orientation='h', title="Top Praised Items", color_discrete_sequence=['#C99700'])
                     fig_pos.update_layout(yaxis=dict(autorange="reversed"))
                     st.plotly_chart(fig_pos, use_container_width=True)
 
@@ -560,8 +694,8 @@ with t4:
                 model = ARIMA(ts, order=(1,1,1)).fit()
                 fcast = model.forecast(steps=6)
                 fig_arima = go.Figure()
-                fig_arima.add_trace(go.Scatter(x=ts.index, y=ts, name='History', line=dict(color='#00F0FF')))
-                fig_arima.add_trace(go.Scatter(x=pd.date_range(ts.index[-1], periods=7, freq='M')[1:], y=fcast, name='Forecast', line=dict(dash='dot', color='#FF00AA')))
+                fig_arima.add_trace(go.Scatter(x=ts.index, y=ts, name='History', line=dict(color='#FFD700')))
+                fig_arima.add_trace(go.Scatter(x=pd.date_range(ts.index[-1], periods=7, freq='M')[1:], y=fcast, name='Forecast', line=dict(dash='dot', color='#5C4033')))
                 st.plotly_chart(fig_arima, use_container_width=True)
                 st.info("Explanation: ARIMA (AutoRegressive Integrated Moving Average) is a statistical time-series model. It looks at past star ratings, trends, and seasonal patterns to project the likely rating trajectory for the next 6 months.")
 
@@ -625,33 +759,91 @@ with t5:
 # --- TAB 6: PRESCRIPTIVE ---
 with t6:
     st.subheader("Interactive Simulators")
-    st.markdown("### 🔍 Methodology Note")
-    st.caption("These simulators use linear coefficients derived from the dataset to estimate impact. **Star Rating** simulations assume a correlation between emotion intensity and rating. **Impact Score** is a projected increase in 'Useful' votes based on review length.")
+    st.markdown("### 🧪 Methodology Note")
+    st.caption(
+        "These simulators use linear coefficients derived from the dataset to estimate impact. "
+        "**Star Rating** simulations assume a correlation between emotional intensity and average star ratings."
+    )
+
+    # Lay out two simulators side by side
     c1, c2 = st.columns(2)
+
+    # -------------------------------
+    # 1. Emotion Simulator
+    # -------------------------------
     with c1:
         st.markdown("#### 🎭 Emotion Simulator")
-        possible_emos = ['joy_intensity', 'anger_intensity', 'trust_intensity', 'surprise_intensity', 'fear_intensity', 'sadness_intensity']
+
+        possible_emos = [
+            "joy_intensity",
+            "anger_intensity",
+            "trust_intensity",
+            "surprise_intensity",
+            "fear_intensity",
+            "sadness_intensity",
+        ]
+
+        # Only keep emotions that actually exist in the current DataFrame
         valid_emos = [e for e in possible_emos if e in df.columns]
+
         if valid_emos:
+            # Turn internal column names into nice labels
+            def get_label(col):
+                return col.replace("_intensity", "").capitalize()
+
             emo_labels = [get_label(e) for e in valid_emos]
-            sel_emo_label = st.selectbox("Select Emotion to Boost:", emo_labels)
-            delta = st.slider(f"Increase {{sel_emo_label}}", 0.0, 0.5, 0.0)
-            st.metric("Pred. Star Increase", f"+{{delta * 1.5:.2f}} stars")
-            st.info("Explanation: Increasing specific emotional intensity creates a stronger connection, statistically correlating with higher star ratings.")
+
+            sel_emo_label = st.selectbox(
+                "Select Emotion to Boost:",
+                emo_labels,
+                index=0,
+            )
+
+            # Map back from label -> underlying column
+            label_to_col = dict(zip(emo_labels, valid_emos))
+            sel_emo_col = label_to_col[sel_emo_label]
+
+            delta = st.slider(
+                f"Increase {sel_emo_label}",
+                min_value=0.0,
+                max_value=0.5,
+                value=0.0,
+                step=0.05,
+            )
+
+            # Simple linear “what-if” – you can refine this later if needed
+            st.metric("Predicted Star Increase", f"{delta * 1.5:.2f} stars")
+            st.info(
+                "Explanation: Increasing specific emotional intensity creates a stronger "
+                "connection, which we estimate to correlate with higher star ratings."
+            )
+        else:
+            st.info("No emotion intensity features are available for this slice.")
+
+    # -------------------------------
+    # 2. Linguistic Simulator
+    # -------------------------------
     with c2:
         st.markdown("#### 📝 Linguistic Simulator")
-        len_delta = st.slider("Increase Review Length", 0, 50, 0)
-        st.metric("Engagement Impact Score", f"{{len_delta * 0.05:.2f}}")
-        st.info("Explanation: The 'Impact Score' represents projected User Engagement (e.g., 'Useful' votes). Calculation: (Added Words / 20) * 1.0. Our analysis suggests that for every 20 words of added context, the review's utility score increases by roughly 1 point.")
-"""
-    with open("dashboard_app.py", "w", encoding='utf-8') as f:
-        f.write(app_code)
 
-    print("\n>> Dashboard App Updated. Launching...")
-    try:
-        os.system("streamlit run dashboard_app.py")
-    except:
-        print("Run manually: streamlit run dashboard_app.py")
+        len_delta = st.slider(
+            "Increase Review Length (words)",
+            min_value=0,
+            max_value=50,
+            value=0,
+            step=5,
+        )
+
+        # Simple engagement proxy
+        engagement_score = len_delta * 0.05
+        st.metric("Engagement Impact Score", f"{engagement_score:.2f}")
+
+        st.info(
+            "Explanation: The ‘Impact Score’ represents projected user engagement "
+            "(for example, additional 'Useful' votes). "
+            "Calculation: (Added words / 20) × 1.0. You can refine this formula "
+            "later based on more detailed modeling."
+        )
 
 if __name__ == "__main__":
     yelp_dashboard()
